@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sistema de Rifas</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #f5f5f0; color: #1a1a1a; min-height: 100vh;
+  }
+  .app { max-width: 600px; margin: 0 auto; padding: 1rem; }
+
+  .header {
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 8px; margin-bottom: 0.75rem;
+  }
+  .header h1 { font-size: 20px; font-weight: 600; }
+  .header-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .stats { display: flex; gap: 6px; }
+  .stat-pill { font-size: 12px; padding: 4px 10px; border-radius: 8px; font-weight: 600; }
+  .pill-free  { background: #d1fae5; color: #065f46; }
+  .pill-taken { background: #fee2e2; color: #991b1b; }
+
+  .sync-row { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #888; }
+  .sync-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: #ccc; flex-shrink: 0; transition: background 0.3s;
+  }
+  .sync-dot.online  { background: #22c55e; }
+  .sync-dot.syncing { background: #f59e0b; animation: pulse 1s infinite; }
+  .sync-dot.error   { background: #ef4444; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+  .legend { display: flex; gap: 14px; margin-bottom: 0.75rem; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #666; }
+  .dot { width: 12px; height: 12px; border-radius: 3px; }
+  .dot-free  { background: #fff; border: 1px solid #ccc; }
+  .dot-taken { background: #E24B4A; }
+
+  .grid {
+    display: grid; grid-template-columns: repeat(10, 1fr); gap: 5px;
+    background: #fff; border-radius: 12px;
+    padding: 12px; border: 1px solid #e5e5e5;
+  }
+  .num-btn {
+    aspect-ratio: 1; border-radius: 6px; border: 1px solid #ddd;
+    background: #fff; color: #1a1a1a; font-size: 11px; font-weight: 600;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    min-height: 36px; transition: all 0.15s; -webkit-tap-highlight-color: transparent;
+  }
+  .num-btn:hover  { background: #f0f0f0; border-color: #999; }
+  .num-btn:active { transform: scale(0.92); }
+  .num-btn.taken  { background: #E24B4A; border-color: #A32D2D; color: #fff; }
+  .num-btn.taken:hover { background: #c53030; }
+  .num-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+  .status-bar { font-size: 11px; color: #999; text-align: right; margin-top: 6px; min-height: 18px; }
+
+  /* ── Modal base ── */
+  .overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.5);
+    align-items: center; justify-content: center;
+    padding: 1rem; z-index: 100;
+  }
+  .overlay.active { display: flex; }
+  .modal {
+    background: #fff; border-radius: 16px; padding: 1.25rem;
+    width: 100%; max-width: 340px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+  }
+  .modal-header {
+    display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;
+  }
+  .modal-title { font-size: 16px; font-weight: 600; }
+  .num-badge {
+    background: #dbeafe; color: #1d4ed8;
+    font-size: 13px; font-weight: 700; padding: 3px 10px; border-radius: 8px;
+  }
+  .close-btn {
+    background: none; border: none; cursor: pointer;
+    color: #666; font-size: 22px; line-height: 1; padding: 2px 6px; margin-left: 4px;
+  }
+  .form-group { margin-bottom: 0.75rem; }
+  .form-label { display: block; font-size: 13px; color: #555; margin-bottom: 4px; font-weight: 500; }
+  .form-input {
+    width: 100%; padding: 10px 12px; border-radius: 8px;
+    border: 1px solid #ddd; background: #fafafa;
+    color: #1a1a1a; font-size: 15px; font-family: inherit;
+  }
+  .form-input:focus { outline: none; border-color: #2563eb; background: #fff; }
+  .form-input.error { border-color: #ef4444; background: #fff5f5; animation: shake 0.3s; }
+  @keyframes shake {
+    0%,100%{ transform: translateX(0); }
+    25%    { transform: translateX(-6px); }
+    75%    { transform: translateX(6px); }
+  }
+
+  .btn-primary {
+    width: 100%; padding: 11px; background: #0F6E56; color: #fff;
+    border: none; border-radius: 8px; font-size: 15px; font-weight: 600;
+    cursor: pointer; margin-top: 0.5rem; font-family: inherit;
+  }
+  .btn-primary:hover { background: #085041; }
+  .btn-primary:disabled { background: #9ca3af; cursor: not-allowed; }
+
+  .info-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 0; border-top: 1px solid #f0f0f0; font-size: 14px;
+  }
+  .info-icon { color: #888; flex-shrink: 0; width: 20px; text-align: center; }
+  .info-val  { color: #1a1a1a; font-weight: 500; }
+
+  .btn-danger {
+    width: 100%; padding: 9px; background: none; color: #dc2626;
+    border: 1px solid #fecaca; border-radius: 8px;
+    font-size: 13px; font-weight: 500; cursor: pointer;
+    margin-top: 0.75rem; font-family: inherit;
+  }
+  .btn-danger:hover { background: #fee2e2; }
+
+  /* ── Modal de clave ── */
+  .pin-hint {
+    font-size: 13px; color: #666; margin-bottom: 1rem; line-height: 1.5;
+  }
+  .pin-error {
+    font-size: 12px; color: #dc2626; margin-top: 4px; min-height: 16px;
+  }
+  .btn-back {
+    width: 100%; padding: 9px; background: none; color: #888;
+    border: 1px solid #e5e5e5; border-radius: 8px;
+    font-size: 13px; cursor: pointer; margin-top: 6px; font-family: inherit;
+  }
+  .btn-back:hover { background: #f5f5f5; }
+
+  @media (max-width: 380px) {
+    .grid { gap: 4px; padding: 8px; }
+    .num-btn { font-size: 10px; min-height: 30px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <div class="header">
+    <h1>🎟️ Rifa para Negrito y Gringo</h1>
+    <div class="header-right">
+      <div class="sync-row">
+        <div class="sync-dot" id="sync-dot"></div>
+        <span id="sync-label">Conectando...</span>
+      </div>
+      <div class="stats">
+        <span class="stat-pill pill-free"  id="stat-free">—</span>
+        <span class="stat-pill pill-taken" id="stat-taken">—</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <div class="legend-item"><div class="dot dot-free"></div> Disponible</div>
+    <div class="legend-item"><div class="dot dot-taken"></div> Ocupado</div>
+  </div>
+
+  <div class="grid" id="grid"></div>
+  <p class="status-bar" id="status-bar"></p>
+</div>
+
+<!-- ── Modal: ver / registrar número ── -->
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-action">Registrar número</span>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <span class="num-badge" id="modal-num"></span>
+        <button class="close-btn" id="btn-close" aria-label="Cerrar">×</button>
+      </div>
+    </div>
+
+    <!-- Vista: registrar -->
+    <div id="view-register">
+      <div class="form-group">
+        <label class="form-label" for="inp-name">Nombre del comprador</label>
+        <input class="form-input" type="text" id="inp-name" placeholder="Ej. Juan Pérez" autocomplete="off" />
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="inp-phone">Celular</label>
+        <input class="form-input" type="tel" id="inp-phone" placeholder="Ej. 987 654 321" autocomplete="off" />
+      </div>
+      <button class="btn-primary" id="btn-save">✓ Guardar</button>
+    </div>
+
+    <!-- Vista: detalle del ocupado -->
+    <div id="view-detail" style="display:none;">
+      <div class="info-row"><span class="info-icon">👤</span><span class="info-val" id="detail-name"></span></div>
+      <div class="info-row"><span class="info-icon">📱</span><span class="info-val" id="detail-phone"></span></div>
+      <button class="btn-danger" id="btn-release">🗑 Liberar número</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Modal: clave para liberar ── -->
+<div class="overlay" id="overlay-pin">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">🔒 Clave de administrador</span>
+      <button class="close-btn" id="btn-pin-close" aria-label="Cerrar">×</button>
+    </div>
+    <p class="pin-hint">Ingresa la clave para liberar el número <strong id="pin-num-label"></strong>.</p>
+    <div class="form-group">
+      <label class="form-label" for="inp-pin">Clave</label>
+      <input class="form-input" type="password" id="inp-pin" placeholder="••••••" autocomplete="off" />
+      <p class="pin-error" id="pin-error"></p>
+    </div>
+    <button class="btn-primary" id="btn-pin-confirm">Confirmar</button>
+    <button class="btn-back" id="btn-pin-back">← Volver</button>
+  </div>
+</div>
+
+<!-- ── Modal: aviso número ya tomado ── -->
+<div class="overlay" id="overlay-aviso">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="aviso-titulo">Aviso</span>
+      <button class="close-btn" id="btn-aviso-close" aria-label="Cerrar">×</button>
+    </div>
+    <p id="aviso-msg" style="font-size:14px;color:#444;line-height:1.6;margin-bottom:1rem;"></p>
+    <button class="btn-primary" id="btn-aviso-ok">Entendido</button>
+  </div>
+</div>
+
+<script>
+const TOTAL      = 200;
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwK3cGE-2nQHSNf-bUGbJDDuS180Zm8l3Pp_aWRUG_Nj1RFi4vqg8HLmgrSOmj4onX28g/exec';
+const CLAVE      = '1234';   // ← cambia esta clave por la que quieras
+
+let localData   = {};
+let selectedNum = null;
+let busy        = false;
+
+// ── Sync ────────────────────────────────────
+function setSync(estado, texto) {
+  document.getElementById('sync-dot').className     = 'sync-dot ' + estado;
+  document.getElementById('sync-label').textContent = texto;
+}
+function setStatus(txt) {
+  document.getElementById('status-bar').textContent = txt;
+}
+
+// ── API ─────────────────────────────────────
+async function apiFetch(params) {
+  const url = SCRIPT_URL + '?' + new URLSearchParams(params).toString();
+  const res = await fetch(url, { redirect: 'follow' });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return res.json();
+}
+
+async function cargarDatos() {
+  setSync('syncing', 'Actualizando...');
+  try {
+    const result = await apiFetch({ action: 'get' });
+    localData = result || {};
+    renderGrid(); updateStats();
+    setSync('online', 'Sincronizado ✓');
+    setStatus('Actualizado: ' + new Date().toLocaleTimeString());
+  } catch(e) {
+    setSync('error', 'Sin conexión');
+    setStatus('No se pudo conectar con Google Sheets.');
+  }
+}
+
+async function guardarNumero(num, name, phone) {
+  setSync('syncing', 'Guardando...');
+  setGridBusy(true);
+  try {
+    const resp = await apiFetch({ action: 'set', num, name: encodeURIComponent(name), phone: encodeURIComponent(phone) });
+
+    if (resp.ok) {
+      localData[num] = { name, phone };
+      renderGrid(); updateStats();
+      setSync('online', 'Guardado ✓');
+      setStatus('Actualizado: ' + new Date().toLocaleTimeString());
+
+    } else if (resp.error === 'ya_tomado') {
+      await cargarDatos();
+      mostrarAviso(
+        '⚠️ Número ya registrado',
+        'El número #' + String(num).padStart(2, '0') +
+        ' fue tomado por <b>' + (resp.nombre || 'otra persona') +
+        '</b> justo antes. La lista ha sido actualizada.'
+      );
+
+    } else {
+      setSync('error', 'Error al guardar');
+      setStatus('El servidor rechazó la operación. Intenta de nuevo.');
+    }
+
+  } catch(e) {
+    setSync('error', 'Error al guardar');
+    setStatus('No se pudo guardar. Verifica tu conexión.');
+  }
+  setGridBusy(false);
+}
+
+async function liberarNumero(num) {
+  setSync('syncing', 'Liberando...');
+  setGridBusy(true);
+  try {
+    const resp = await apiFetch({ action: 'delete', num });
+
+    if (resp.ok) {
+      delete localData[num];
+      renderGrid(); updateStats();
+      setSync('online', 'Actualizado ✓');
+      setStatus('Actualizado: ' + new Date().toLocaleTimeString());
+    } else {
+      setSync('error', 'Error al liberar');
+      setStatus('No se pudo liberar. Intenta de nuevo.');
+      await cargarDatos();
+    }
+
+  } catch(e) {
+    setSync('error', 'Error al liberar');
+    setStatus('No se pudo liberar. Verifica tu conexión.');
+  }
+  setGridBusy(false);
+}
+
+// ── UI ──────────────────────────────────────
+function setGridBusy(state) {
+  busy = state;
+  document.querySelectorAll('.num-btn').forEach(b => b.disabled = state);
+}
+
+function renderGrid() {
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+  for (let i = 1; i <= TOTAL; i++) {
+    const btn = document.createElement('button');
+    btn.className   = 'num-btn' + (localData[i] ? ' taken' : '');
+    btn.textContent = i;
+    btn.disabled    = busy;
+    btn.setAttribute('aria-label',
+      'Número ' + i + (localData[i] ? ' - ' + localData[i].name : ''));
+    btn.onclick = () => openModal(i);
+    grid.appendChild(btn);
+  }
+}
+
+function updateStats() {
+  const taken = Object.keys(localData).length;
+  document.getElementById('stat-free').textContent  = (TOTAL - taken) + ' disponibles';
+  document.getElementById('stat-taken').textContent = taken + ' ocupados';
+}
+
+// ── Modal principal ──────────────────────────
+function openModal(num) {
+  selectedNum = num;
+  document.getElementById('modal-num').textContent = '#' + String(num).padStart(2, '0');
+  document.getElementById('overlay').classList.add('active');
+
+  if (localData[num]) {
+    document.getElementById('modal-action').textContent    = 'Número ocupado';
+    document.getElementById('detail-name').textContent     = localData[num].name;
+    document.getElementById('detail-phone').textContent    = localData[num].phone;
+    document.getElementById('view-register').style.display = 'none';
+    document.getElementById('view-detail').style.display   = 'block';
+  } else {
+    document.getElementById('modal-action').textContent    = 'Registrar número';
+    document.getElementById('inp-name').value  = '';
+    document.getElementById('inp-phone').value = '';
+    document.getElementById('view-register').style.display = 'block';
+    document.getElementById('view-detail').style.display   = 'none';
+    setTimeout(() => document.getElementById('inp-name').focus(), 80);
+  }
+}
+
+function closeModal() {
+  document.getElementById('overlay').classList.remove('active');
+  selectedNum = null;
+}
+
+document.getElementById('btn-close').onclick = closeModal;
+document.getElementById('overlay').onclick = e => {
+  if (e.target === document.getElementById('overlay')) closeModal();
+};
+
+document.getElementById('btn-save').onclick = async () => {
+  const name  = document.getElementById('inp-name').value.trim();
+  const phone = document.getElementById('inp-phone').value.trim();
+  if (!name)  { document.getElementById('inp-name').focus();  return; }
+  if (!phone) { document.getElementById('inp-phone').focus(); return; }
+  const num = selectedNum;
+  const btn = document.getElementById('btn-save');
+  btn.disabled = true; btn.textContent = 'Guardando...';
+  closeModal();
+  await guardarNumero(num, name, phone);
+  btn.disabled = false; btn.textContent = '✓ Guardar';
+};
+
+document.getElementById('inp-phone').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('btn-save').click();
+});
+
+// ── Botón liberar → abre modal de clave ─────
+document.getElementById('btn-release').onclick = () => {
+  const num = selectedNum;   // guardar antes de que closeModal lo resetee
+  closeModal();
+  selectedNum = num;         // restaurar para que abrirPinModal y confirm lo usen
+  abrirPinModal();
+};
+
+// ── Modal de clave ───────────────────────────
+function abrirPinModal() {
+  document.getElementById('pin-num-label').textContent = '#' + String(selectedNum).padStart(2, '0');
+  document.getElementById('inp-pin').value = '';
+  document.getElementById('pin-error').textContent = '';
+  document.getElementById('inp-pin').classList.remove('error');
+  document.getElementById('overlay-pin').classList.add('active');
+  setTimeout(() => document.getElementById('inp-pin').focus(), 80);
+}
+
+function cerrarPinModal() {
+  document.getElementById('overlay-pin').classList.remove('active');
+}
+
+document.getElementById('btn-pin-close').onclick = cerrarPinModal;
+document.getElementById('overlay-pin').onclick = e => {
+  if (e.target === document.getElementById('overlay-pin')) cerrarPinModal();
+};
+
+document.getElementById('btn-pin-back').onclick = () => {
+  cerrarPinModal();
+  if (selectedNum) openModal(selectedNum);
+};
+
+document.getElementById('btn-pin-confirm').onclick = async () => {
+  const pin    = document.getElementById('inp-pin').value;
+  const errEl  = document.getElementById('pin-error');
+  const pinInp = document.getElementById('inp-pin');
+
+  if (pin !== CLAVE) {
+    errEl.textContent = 'Clave incorrecta. Intenta de nuevo.';
+    pinInp.classList.add('error');
+    pinInp.value = '';
+    setTimeout(() => pinInp.classList.remove('error'), 400);
+    setTimeout(() => pinInp.focus(), 80);
+    return;
+  }
+
+  const num = selectedNum;
+  cerrarPinModal();
+  await liberarNumero(num);
+};
+
+document.getElementById('inp-pin').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('btn-pin-confirm').click();
+});
+
+// ── Modal de aviso ───────────────────────────
+function mostrarAviso(titulo, msg) {
+  document.getElementById('aviso-titulo').textContent = titulo;
+  document.getElementById('aviso-msg').innerHTML = msg;
+  document.getElementById('overlay-aviso').classList.add('active');
+}
+
+function cerrarAviso() {
+  document.getElementById('overlay-aviso').classList.remove('active');
+}
+
+document.getElementById('btn-aviso-close').onclick = cerrarAviso;
+document.getElementById('btn-aviso-ok').onclick    = cerrarAviso;
+document.getElementById('overlay-aviso').onclick = e => {
+  if (e.target === document.getElementById('overlay-aviso')) cerrarAviso();
+};
+
+// Refresca cada 30 seg
+setInterval(cargarDatos, 30000);
+
+// Arranque
+renderGrid();
+updateStats();
+cargarDatos();
+</script>
+</body>
+</html>
